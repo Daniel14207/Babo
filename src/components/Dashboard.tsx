@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { store, Historique } from '../lib/store';
-import { parseHistorique, runPredictionAnalysis } from '../lib/gemini';
+import { parseHistorique } from '../lib/gemini';
+import { parseMatches, runAnalysis } from '../lib/analyzer';
 import { Loader2, ChevronDown, ChevronUp, AlertTriangle, ShieldCheck, Activity } from 'lucide-react';
 import AnalysisResult from './AnalysisResult';
 
@@ -45,23 +46,56 @@ export default function Dashboard() {
     }
   };
 
-  const handleRunAnalysis = async () => {
-    if (!matchInput.trim() || analysisCount >= 2) return;
-    setIsAnalyzing(true);
-    try {
-      const histTexts = historiques.map(h => h.text);
-      const res = await runPredictionAnalysis(histTexts, matchInput);
+  const showRenewMessage = () => {
+    alert("Renouvellement requis. Limite de 2 analyses par session atteinte.");
+  };
+
+  const renderResults = (res: any) => {
+    setResults(null);
+    requestAnimationFrame(() => {
       setResults(res);
-      const newCount = analysisCount + 1;
-      setAnalysisCount(newCount);
-      store.set('analysisCount', newCount);
-      setShowAnalysisInput(false);
-    } catch (e) {
-      console.error(e);
-      alert("Erreur lors de l'analyse des matchs.");
-    } finally {
-      setIsAnalyzing(false);
+      requestAnimationFrame(() => {
+        const container = document.querySelector('#resultsContainer') as HTMLElement;
+        if (container) {
+          container.style.display = 'block';
+        }
+      });
+    });
+  };
+
+  const handleRunAnalysis = () => {
+    if (historiques.length === 0) {
+      alert("Veuillez ajouter un historique avant l'analyse.");
+      return;
     }
+    if (analysisCount >= 2) {
+      showRenewMessage();
+      return;
+    }
+    
+    const parsedMatches = parseMatches(matchInput);
+    if (parsedMatches.length === 0) {
+      alert("Aucun match détecté. Vérifiez le format.");
+      return;
+    }
+
+    setIsAnalyzing(true);
+    
+    setTimeout(() => {
+      try {
+        const res = runAnalysis(parsedMatches, historiques);
+        renderResults(res);
+        const newCount = analysisCount + 1;
+        setAnalysisCount(newCount);
+        store.set('analysisCount', newCount);
+        setShowAnalysisInput(false);
+      } catch (error) {
+        console.error(error);
+        alert("Erreur durant l'analyse.");
+      } finally {
+        setIsAnalyzing(false);
+      }
+    }, 1200);
   };
 
   const getRiskColor = (risk: string) => {
@@ -204,7 +238,9 @@ export default function Dashboard() {
         )}
 
         {results && (
-          <AnalysisResult data={results} />
+          <div id="resultsContainer" style={{ display: 'none' }}>
+            <AnalysisResult data={results} />
+          </div>
         )}
       </div>
     </div>
